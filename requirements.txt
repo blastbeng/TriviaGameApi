@@ -1,0 +1,10 @@
+python-dotenv
+flask
+flask-restx
+click<8.1.0
+pyyaml
+itsdangerous
+Jinja2
+MarkupSafe
+uWSGI
+pysqlite3
