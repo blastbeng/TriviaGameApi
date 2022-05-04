@@ -1,4 +1,5 @@
 python-dotenv
+requests
 flask
 flask-restx
 click<8.1.0

@@ -19,7 +19,7 @@ parsertriviaget.add_argument("category")
 parsertriviaget.add_argument("difficulty")
 parsertriviaget.add_argument("type")
 
-nstrivia = api.namespace('chatbot_trivia', 'Accumulators Chatbot Trivia APIs')
+nstrivia = api.namespace('trivia', 'Accumulators Chatbot Trivia APIs')
 @nstrivia.route('/getquiz')
 class TriviaGet(Resource):
   @api.expect(parsertriviaget)
