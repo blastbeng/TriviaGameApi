@@ -54,6 +54,7 @@ def create_empty_tables():
     
     sqlite_create_questions_query = """ CREATE TABLE IF NOT EXISTS Questions(
             id INTEGER PRIMARY KEY,
+            number INTEGER NOT NULL,
             category VARCHAR(255) NOT NULL,
             type VARCHAR(255) NOT NULL,
             difficulty VARCHAR(255) NOT NULL,
@@ -124,12 +125,14 @@ def create_new_quiz(author, author_id, content):
 
     quiz_id = cursor.lastrowid
 
+    numbercounter = 1
+
     for result in content['results']:
       sqlite_insert_questions_query = """INSERT INTO Questions
-                            (category, type, difficulty, question, quiz_id) 
+                            (number, category, type, difficulty, question, quiz_id) 
                             VALUES 
-                            (?, ?, ?, ?, ?)"""
-      data_questions_tuple = (result['category'], result['type'], result['difficulty'], result['question'], quiz_id)
+                            (?, ?, ?, ?, ?, ?)"""
+      data_questions_tuple = (numbercounter, result['category'], result['type'], result['difficulty'], result['question'], quiz_id)
       cursor.execute(sqlite_insert_questions_query, data_questions_tuple)
 
       question_id = cursor.lastrowid
@@ -144,6 +147,8 @@ def create_new_quiz(author, author_id, content):
       for incorrect_answer in result['incorrect_answers']:
         data_incorrect_answer_tuple = (incorrect_answer, 0, question_id)
         cursor.execute(sqlite_insert_answers_query, data_incorrect_answer_tuple)
+
+      numbercounter += 1
 
     sqliteConnection.commit()
     cursor.close()
@@ -194,10 +199,11 @@ def get_quiz(quiz_id):
 
     for row in records_questions:
       idquestion =   row[0]
-      category =     row[1]
-      typeq =        row[2]
-      difficulty =   row[3]
-      question =     row[4]
+      number =       row[1]
+      category =     row[2]
+      typeq =        row[3]
+      difficulty =   row[4]
+      question =     row[5]
 
       cursor_answers = sqliteConnection.cursor()
 
@@ -224,6 +230,7 @@ def get_quiz(quiz_id):
 
       question_data_set = {
         "id":           idquestion, 
+        "number":       number, 
         "category":     category, 
         "type":         typeq, 
         "difficulty":   difficulty, 
@@ -392,7 +399,7 @@ def save_user_no_commit(username: str, user_id: int, sqliteConnection):
     raise Exception("Error saving the user")
 
 
-def get_answer_internal(questionid, userid):
+def get_answer_internal(questionid: int, userid: int):
   answers_data_set = None
   try:
     sqliteConnection = sqlite3.connect(TMP_DIR+'trivia.sqlite3')
@@ -451,3 +458,120 @@ def get_answer(questionid, userid):
     raise Exception("Error getting the user answer")
 
   
+def get_question(question_id: int, number: int, quiz_id: int):
+  question_data_set = None
+  try:
+
+    if question_id:
+      sqlite_select_questions_query = """SELECT * from Questions WHERE id = ? ORDER BY ID DESC"""
+      data = (question_id,)
+    elif number:
+      sqlite_select_questions_query = """SELECT * from Questions WHERE number = ? and quiz_id = ? ORDER BY ID DESC"""
+      data = (number,quiz_id,)
+    else:
+      raise Exception("question_id or (number + quiz_id) are mandatory")
+
+    
+    sqliteConnection = sqlite3.connect(TMP_DIR+'trivia.sqlite3')
+    cursor_questions = sqliteConnection.cursor()
+    
+
+    cursor_questions.execute(sqlite_select_questions_query, data)
+
+    records_questions = cursor_questions.fetchall()
+
+    json_question_list = []
+
+    for row in records_questions:
+      idquestion =   row[0]
+      number =       row[1]
+      category =     row[2]
+      typeq =        row[3]
+      difficulty =   row[4]
+      question =     row[5]
+
+      cursor_answers = sqliteConnection.cursor()
+
+      sqlite_select_answers_query = """SELECT * from Answers WHERE questions_id = ? ORDER BY ID DESC"""
+      cursor_answers.execute(sqlite_select_answers_query, (idquestion,))
+      records_answers = cursor_answers.fetchall()
+
+      json_answers_list = []
+
+      for row in records_answers:
+        idanswer =     row[0]
+        answer =       row[1]
+        is_correct =   row[2]
+        
+        answers_data_set = {
+          "id":           idanswer, 
+          "answer":       answer, 
+          "is_correct":   is_correct
+        }
+
+        json_answers_list.append(answers_data_set)
+
+
+
+      question_data_set = {
+        "id":           idquestion, 
+        "number":       number, 
+        "category":     category, 
+        "type":         typeq, 
+        "difficulty":   difficulty, 
+        "question":     question,
+        "answers":      json_answers_list
+      }
+
+      cursor_answers.close()
+
+    cursor_questions.close()
+
+  except sqlite3.Error as error:
+    print("SQLITE Error: ", error)
+    raise Exception(str(error))
+  finally:
+    if sqliteConnection:
+      sqliteConnection.close()
+  if question_data_set is not None:
+    return question_data_set
+  else:
+    raise Exception("Question id not found")
+
+
+
+def get_answers(answers_id: int):
+  json_answers_list = None
+  try:
+    sqliteConnection = sqlite3.connect(TMP_DIR+'trivia.sqlite3') 
+    cursor_answers = sqliteConnection.cursor() 
+
+    sqlite_select_answers_query = """SELECT * from Answers WHERE id = ? ORDER BY ID DESC"""
+
+    cursor_answers.execute(sqlite_select_answers_query, (answers_id,))
+    records_answers = cursor_answers.fetchall() 
+    json_answers_list = [] 
+    for row in records_answers:
+      idanswer =     row[0]
+      answer =       row[1]
+      is_correct =   row[2]
+      
+      answers_data_set = {
+        "id":           idanswer, 
+        "answer":       answer, 
+        "is_correct":   is_correct
+      } 
+      json_answers_list.append(answers_data_set)
+
+    cursor_answers.close()
+
+  except sqlite3.Error as error:
+    print("SQLITE Error: ", error)
+    raise Exception(str(error))
+  finally:
+    if sqliteConnection:
+      sqliteConnection.close()
+  if json_answers_list is not None:
+    return json_answers_list
+  else:
+    raise Exception("Answer id not found")

@@ -20,8 +20,8 @@ parserquizcreate.add_argument("category", type=str)
 parserquizcreate.add_argument("difficulty", type=str)
 parserquizcreate.add_argument("type", type=str)
 
-nstrivia = api.namespace('trivia', 'Accumulators Chatbot Trivia APIs')
-@nstrivia.route('/quiz/create')
+nsquiz = api.namespace('quiz', 'Quiz APIs')
+@nsquiz.route('/create')
 class QuizCreate(Resource):
   @api.expect(parserquizcreate)
   @api.response(200, 'Success')
@@ -44,7 +44,7 @@ class QuizCreate(Resource):
 parserquizinsert = reqparse.RequestParser()
 parserquizinsert.add_argument("quiz_id", type=int)
 
-@nstrivia.route('/quiz/get')
+@nsquiz.route('/get')
 class QuizInsert(Resource):
   @api.expect(parserquizinsert)
   @api.response(200, 'Success')
@@ -60,13 +60,64 @@ class QuizInsert(Resource):
       abort(400, str(e))
 
 
+
+
+nsquestions = api.namespace('questions', 'Questions APIs')
+      
+parserquestionsget = reqparse.RequestParser()
+parserquestionsget.add_argument("question_id", type=int)
+parserquestionsget.add_argument("number", type=int)
+parserquestionsget.add_argument("quiz_id", type=int)
+
+@nsquestions.route('/get')
+class QuestionsGet(Resource):
+  @api.expect(parserquestionsget)
+  @api.response(200, 'Success')
+  @api.response(400, 'Generic Error')
+  def get(self):
+    try:
+      question_id = request.args.get("question_id")
+      number = request.args.get("number")
+      quiz_id = request.args.get("quiz_id")
+      questions_data = trivia.get_question(question_id, number, quiz_id)
+      resp = Response(json.dumps(questions_data), mimetype='application/json')
+      resp.status_code = 200
+      return resp
+    except Exception as e:
+      abort(400, str(e))
+
+
+
+nsanswers = api.namespace('answers', 'Answers APIs')
+
+      
+parseranswersget = reqparse.RequestParser()
+parseranswersget.add_argument("answer_id", type=int)
+
+@nsanswers.route('/get')
+class AnswersGet(Resource):
+  @api.expect(parseranswersget)
+  @api.response(200, 'Success')
+  @api.response(400, 'Generic Error')
+  def get(self):
+    try:
+      answer_id = request.args.get("answer_id")
+      answers_data = trivia.get_answers(answer_id)
+      resp = Response(json.dumps(answers_data), mimetype='application/json')
+      resp.status_code = 200
+      return resp
+    except Exception as e:
+      abort(400, str(e))
+
+
+nsuser = api.namespace('user', 'User APIs')
 parserusersaveanswer = reqparse.RequestParser()
 parserusersaveanswer.add_argument("questionid", type=int)
 parserusersaveanswer.add_argument("answerid", type=int)
 parserusersaveanswer.add_argument("userid", type=int)
 parserusersaveanswer.add_argument("username", type=str)
 
-@nstrivia.route('/user/saveanswer')
+@nsuser.route('/saveanswer')
 class UserSaveAnswer(Resource):
   @api.expect(parserusersaveanswer)
   @api.response(200, 'Success')
@@ -91,7 +142,7 @@ parserusersave = reqparse.RequestParser()
 parserusersave.add_argument("userid", type=int)
 parserusersave.add_argument("username", type=str)
 
-@nstrivia.route('/user/saveuser')
+@nsuser.route('/saveuser')
 class UserSave(Resource):
   @api.expect(parserusersave)
   @api.response(200, 'Success')
@@ -114,7 +165,7 @@ parserusergetanswer = reqparse.RequestParser()
 parserusergetanswer.add_argument("questionid", type=int)
 parserusergetanswer.add_argument("userid", type=int)
 
-@nstrivia.route('/user/getanswer')
+@nsuser.route('/getanswer')
 class UserGetAnswer(Resource):
   @api.expect(parserusergetanswer)
   @api.response(200, 'Success')
