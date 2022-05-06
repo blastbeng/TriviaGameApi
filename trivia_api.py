@@ -19,6 +19,7 @@ parserquizcreate.add_argument("amount", type=int)
 parserquizcreate.add_argument("category", type=str)
 parserquizcreate.add_argument("difficulty", type=str)
 parserquizcreate.add_argument("type", type=str)
+parserquizcreate.add_argument("guild_id", type=int)
 
 nsquiz = api.namespace('quiz', 'Quiz APIs')
 @nsquiz.route('/create')
@@ -34,7 +35,8 @@ class QuizCreate(Resource):
       category = request.args.get("category")
       difficulty = request.args.get("difficulty")
       typeq = request.args.get("type")
-      quiz_data = trivia.create_quiz(author, author_id, amount, category, difficulty, typeq)
+      guild_id = request.args.get("guild_id")
+      quiz_data = trivia.create_quiz(author, author_id, amount, category, difficulty, typeq, guild_id)
       resp = Response(json.dumps(quiz_data), mimetype='application/json')
       resp.status_code = 200
       return resp
@@ -43,6 +45,7 @@ class QuizCreate(Resource):
       
 parserquizinsert = reqparse.RequestParser()
 parserquizinsert.add_argument("quiz_id", type=int)
+parserquizinsert.add_argument("guild_id", type=int)
 
 @nsquiz.route('/get')
 class QuizInsert(Resource):
@@ -52,7 +55,90 @@ class QuizInsert(Resource):
   def get(self):
     try:
       quiz_id = request.args.get("quiz_id")
-      quiz_data = trivia.get_quiz(quiz_id)
+      guild_id = request.args.get("guild_id")
+      quiz_data = trivia.get_quiz(quiz_id, guild_id)
+      resp = Response(json.dumps(quiz_data), mimetype='application/json')
+      resp.status_code = 200
+      return resp
+    except Exception as e:
+      abort(400, str(e))
+
+
+parserquizend = reqparse.RequestParser()
+parserquizend.add_argument("quiz_id", type=int)
+parserquizend.add_argument("guild_id", type=int)
+
+@nsquiz.route('/end')
+class QuizEnd(Resource):
+  @api.expect(parserquizend)
+  @api.response(200, 'Success')
+  @api.response(400, 'Generic Error')
+  def get(self):
+    try:
+      quiz_id = request.args.get("quiz_id")
+      guild_id = request.args.get("guild_id")
+      quiz_data = trivia.end_quiz(quiz_id, guild_id)
+      resp = Response(json.dumps(quiz_data), mimetype='application/json')
+      resp.status_code = 200
+      return resp
+    except Exception as e:
+      abort(400, str(e))
+
+parserquizendall = reqparse.RequestParser()
+parserquizendall.add_argument("guild_id", type=int)
+
+@nsquiz.route('/endall')
+class QuizEndAll(Resource):
+  @api.expect(parserquizendall)
+  @api.response(200, 'Success')
+  @api.response(400, 'Generic Error')
+  def get(self):
+    try:
+      guild_id = request.args.get("guild_id")
+      quiz_data = trivia.end_all_quiz(guild_id)
+      resp = Response(json.dumps(quiz_data), mimetype='application/json')
+      resp.status_code = 200
+      return resp
+    except Exception as e:
+      abort(400, str(e))
+
+
+parserquizrunning = reqparse.RequestParser()
+parserquizrunning.add_argument("is_running", type=int)
+parserquizrunning.add_argument("guild_id", type=int)
+
+@nsquiz.route('/running')
+class QuizByRunning(Resource):
+  @api.expect(parserquizrunning)
+  @api.response(200, 'Success')
+  @api.response(400, 'Generic Error')
+  def get(self):
+    try:
+      is_running = request.args.get("is_running")
+      guild_id = request.args.get("guild_id")
+      quiz_data = trivia.quiz_by_running(is_running,guild_id)
+      resp = Response(json.dumps(quiz_data), mimetype='application/json')
+      resp.status_code = 200
+      return resp
+    except Exception as e:
+      abort(400, str(e))
+
+
+      
+parserquizgetresults = reqparse.RequestParser()
+parserquizgetresults.add_argument("quiz_id", type=int)
+parserquizgetresults.add_argument("guild_id", type=int)
+
+@nsquiz.route('/getresults')
+class QuizGetResults(Resource):
+  @api.expect(parserquizgetresults)
+  @api.response(200, 'Success')
+  @api.response(400, 'Generic Error')
+  def get(self):
+    try:
+      quiz_id = request.args.get("quiz_id")
+      guild_id = request.args.get("guild_id")
+      quiz_data = trivia.get_quiz_results(quiz_id,guild_id)
       resp = Response(json.dumps(quiz_data), mimetype='application/json')
       resp.status_code = 200
       return resp
