@@ -2,6 +2,7 @@ import os
 import requests
 import sqlite3
 import traceback
+import html
 from pathlib import Path
 from os.path import join, dirname
 from dotenv import load_dotenv
@@ -11,11 +12,13 @@ load_dotenv(dotenv_path)
 TMP_DIR = os.environ.get("TMP_DIR")
 TRIVIA_API = os.environ.get("TRIVIA_API")
 
-def create_quiz(author, author_id, amount, category, difficulty, typeq):
+def create_quiz(author, author_id, amount, category, difficulty, typeq, guild_id):
   if not author:
     raise Exception("Author is mandatory")
-  if not author_id:
+  if author_id == 0 or not author_id:
     raise Exception("Author id is mandatory")
+  if guild_id == 0 or not guild_id:
+    raise Exception("Guild id is mandatory")
   if amount and amount is not None and amount != "" and int(amount) <= 10:
     url = TRIVIA_API + "?amount=" + amount
   elif not amount or amount is None or amount == "":
@@ -29,7 +32,7 @@ def create_quiz(author, author_id, amount, category, difficulty, typeq):
   if typeq and typeq is not None and typeq != "":
     url = url + "&typeq=" + typeq
   response = requests.get(url)
-  return create_new_quiz(author, author_id, response.json())
+  return create_new_quiz(author, author_id, guild_id, response.json())
 
 def check_temp_trivia_exists(): 
   fle = Path(TMP_DIR+'trivia.sqlite3')
@@ -46,7 +49,9 @@ def create_empty_tables():
     sqlite_create_quiz_query = """ CREATE TABLE IF NOT EXISTS Quiz(
             id INTEGER PRIMARY KEY,
             author VARCHAR(255) NOT NULL,
-            author_id INTEGER NOT NULL
+            author_id INTEGER NOT NULL,
+            is_running INTEGER NOT NULL,
+            guild_id INTEGER NOT NULL
         ); """
 
     cursor.execute(sqlite_create_quiz_query)    
@@ -59,6 +64,7 @@ def create_empty_tables():
             type VARCHAR(255) NOT NULL,
             difficulty VARCHAR(255) NOT NULL,
             question INTEGER NOT NULL,
+            is_last INTEGER NOT NULL,
             quiz_id INTEGER NOT NULL,
             FOREIGN KEY (quiz_id)
               REFERENCES Quiz (id) 
@@ -108,18 +114,18 @@ def create_empty_tables():
     if sqliteConnection:
         sqliteConnection.close()
 
-def create_new_quiz(author, author_id, content): 
+def create_new_quiz(author, author_id, guild_id, content): 
   quiz_id = 0 
   try:
     sqliteConnection = sqlite3.connect(TMP_DIR+'trivia.sqlite3')
     cursor = sqliteConnection.cursor()
 
     sqlite_insert_quiz_query = """INSERT INTO Quiz
-                          (author, author_id) 
+                          (author, author_id, is_running, guild_id) 
                            VALUES 
-                          (?, ?)"""
+                          (?, ?, ?, ?)"""
 
-    data_quiz_tuple = (author,author_id,)
+    data_quiz_tuple = (author,author_id,1,guild_id,)
 
     cursor.execute(sqlite_insert_quiz_query, data_quiz_tuple)
 
@@ -129,10 +135,23 @@ def create_new_quiz(author, author_id, content):
 
     for result in content['results']:
       sqlite_insert_questions_query = """INSERT INTO Questions
-                            (number, category, type, difficulty, question, quiz_id) 
+                            (number, category, type, difficulty, question, is_last, quiz_id) 
                             VALUES 
-                            (?, ?, ?, ?, ?, ?)"""
-      data_questions_tuple = (numbercounter, result['category'], result['type'], result['difficulty'], result['question'], quiz_id)
+                            (?, ?, ?, ?, ?, ?, ?)"""
+
+      
+
+      is_last = 0
+      if numbercounter == len(content['results']):
+        is_last = 1
+
+      data_questions_tuple = (numbercounter, 
+        html.unescape(result['category']), 
+        html.unescape(result['type']), 
+        html.unescape(result['difficulty']), 
+        html.unescape(result['question']), 
+        is_last,
+        quiz_id)
       cursor.execute(sqlite_insert_questions_query, data_questions_tuple)
 
       question_id = cursor.lastrowid
@@ -141,7 +160,7 @@ def create_new_quiz(author, author_id, content):
                             (answer, is_correct, questions_id) 
                             VALUES 
                             (?, ?, ?)"""
-      data_correct_answer_tuple = (result['correct_answer'], 1, question_id)
+      data_correct_answer_tuple = (html.unescape(result['correct_answer']), 1, question_id)
       cursor.execute(sqlite_insert_answers_query, data_correct_answer_tuple)
 
       for incorrect_answer in result['incorrect_answers']:
@@ -167,19 +186,22 @@ def create_new_quiz(author, author_id, content):
   else:
     raise Exception("Error creating new quiz")
 
-def get_quiz(quiz_id):
+def get_quiz(quiz_id: int, guild_id: int):
   quiz_data_set = None
   try:
 
     author = None
+    is_running = None
     sqliteConnection = sqlite3.connect(TMP_DIR+'trivia.sqlite3')
     cursor_quiz = sqliteConnection.cursor()
 
-    sqlite_select_quiz_query = """SELECT author from Quiz WHERE id = ? ORDER BY ID DESC"""
-    cursor_quiz.execute(sqlite_select_quiz_query, (quiz_id,))
+    sqlite_select_quiz_query = """SELECT author, is_running, guild_id from Quiz WHERE id = ? and guild_id = ? ORDER BY ID DESC"""
+    cursor_quiz.execute(sqlite_select_quiz_query, (quiz_id,guild_id,))
     records_quiz = cursor_quiz.fetchall()
     for row in records_quiz:
       author = row[0]
+      is_running = row[1]
+      guild_id = row[2]
 
     
     cursor_quiz.close()
@@ -204,6 +226,7 @@ def get_quiz(quiz_id):
       typeq =        row[3]
       difficulty =   row[4]
       question =     row[5]
+      is_last =      row[6]
 
       cursor_answers = sqliteConnection.cursor()
 
@@ -235,6 +258,7 @@ def get_quiz(quiz_id):
         "type":         typeq, 
         "difficulty":   difficulty, 
         "question":     question,
+        "is_last":      is_last,
         "answers":      json_answers_list
       }
       json_question_list.append(question_data_set)
@@ -245,7 +269,9 @@ def get_quiz(quiz_id):
 
     quiz_data_set = {
         "id":           quiz_id, 
+        "is_running":   is_running, 
         "author":       author, 
+        "guild_id":     guild_id,
         "questions":    json_question_list
     }
 
@@ -256,11 +282,70 @@ def get_quiz(quiz_id):
     if sqliteConnection:
       sqliteConnection.close()
 
-  return quiz_data_set
   if quiz_data_set is not None:
     return quiz_data_set
   else:
     raise Exception("Quiz id not found")
+
+
+def get_quiz_results(quiz_id: int, guild_id: int):
+  result = {}
+  try:
+
+    author = None
+    sqliteConnection = sqlite3.connect(TMP_DIR+'trivia.sqlite3')
+    cursor_quiz = sqliteConnection.cursor()
+
+    sqlite_select_quiz_query = """SELECT author from Quiz WHERE id = ? ORDER BY ID DESC"""
+    cursor_quiz.execute(sqlite_select_quiz_query, (quiz_id,))
+    records_quiz = cursor_quiz.fetchall()
+    for row in records_quiz:
+      author = row[0]
+
+    
+    cursor_quiz.close()
+
+    if not author:      
+      if sqliteConnection:
+        sqliteConnection.close()
+      raise Exception("Author not found")
+
+    cursor_questions = sqliteConnection.cursor()
+    
+
+    sqlite_select_questions_query = """SELECT us.username, is_correct
+                                       FROM UserAnswers ua
+                                                 JOIN Users us on us.id = ua.user_id
+                                                 JOIN Answers an on an.id = ua.answer_id
+                                                 JOIN Questions qs on qs.id = an.questions_id
+                                       JOIN Quiz qz on qz.id = qs.quiz_id
+                                                 WHERE qz.id = ? and qz.guild_id = ?
+                                                 ORDER BY us.username"""
+
+    cursor_questions.execute(sqlite_select_questions_query, (quiz_id,guild_id,))
+    records_questions = cursor_questions.fetchall()
+
+    for row in records_questions:
+      username =      row[0]
+      is_correct =       row[1]
+
+      if username in result.keys():
+        result[username] = result[username] + is_correct
+      else:
+        result[username] = is_correct
+
+      cursor_questions.close()
+
+  except sqlite3.Error as error:
+    print("SQLITE Error: ", error)
+    raise Exception(str(error))
+  finally:
+    if sqliteConnection:
+      sqliteConnection.close()
+
+  return dict(sorted(result.items(), key=lambda item: item[1]))
+
+
 
 
 def save_answer(questionid: int, answerid: int, userid: int, username: str):
@@ -269,10 +354,7 @@ def save_answer(questionid: int, answerid: int, userid: int, username: str):
   answers_data_set = get_answer_internal(questionid, userid)
 
   if(answers_data_set is not None):
-    save_data_set = {
-        "UserAnswers_id": answers_data_set['id']
-    }
-    return save_data_set
+    raise Exception("The user already answered the question!")
 
 
   save_id = 0
@@ -460,16 +542,18 @@ def get_answer(questionid, userid):
   
 def get_question(question_id: int, number: int, quiz_id: int):
   question_data_set = None
-  try:
 
-    if question_id:
-      sqlite_select_questions_query = """SELECT * from Questions WHERE id = ? ORDER BY ID DESC"""
-      data = (question_id,)
-    elif number:
-      sqlite_select_questions_query = """SELECT * from Questions WHERE number = ? and quiz_id = ? ORDER BY ID DESC"""
-      data = (number,quiz_id,)
-    else:
-      raise Exception("question_id or (number + quiz_id) are mandatory")
+
+  if question_id:
+    sqlite_select_questions_query = """SELECT * from Questions WHERE id = ? ORDER BY ID DESC"""
+    data = (question_id,)
+  elif number and quiz_id:
+    sqlite_select_questions_query = """SELECT * from Questions WHERE number = ? and quiz_id = ? ORDER BY ID DESC"""
+    data = (number,quiz_id,)
+  else:
+    raise Exception("question_id or (number + quiz_id) are mandatory")
+
+  try:
 
     
     sqliteConnection = sqlite3.connect(TMP_DIR+'trivia.sqlite3')
@@ -489,6 +573,7 @@ def get_question(question_id: int, number: int, quiz_id: int):
       typeq =        row[3]
       difficulty =   row[4]
       question =     row[5]
+      is_last =      row[6]
 
       cursor_answers = sqliteConnection.cursor()
 
@@ -520,6 +605,7 @@ def get_question(question_id: int, number: int, quiz_id: int):
         "type":         typeq, 
         "difficulty":   difficulty, 
         "question":     question,
+        "is_last":      is_last, 
         "answers":      json_answers_list
       }
 
@@ -575,3 +661,82 @@ def get_answers(answers_id: int):
     return json_answers_list
   else:
     raise Exception("Answer id not found")
+
+
+def end_quiz(quiz_id: int, guild_id: int):
+  try:
+    sqliteConnection = sqlite3.connect(TMP_DIR+'trivia.sqlite3')
+    cursor = sqliteConnection.cursor()
+
+    sqlite_query = """UPDATE QUIZ SET is_running = 0 WHERE id = ? and guild_id = ?"""
+
+    data = (quiz_id,guild_id,)
+    cursor.execute(sqlite_query, data)
+
+    sqliteConnection.commit()
+    cursor.close()
+
+  except sqlite3.Error as error:
+    print("SQLITE Error: ", error)
+    raise Exception(str(error))
+  finally:
+    if sqliteConnection:
+      sqliteConnection.close()
+  return get_quiz_results(quiz_id, guild_id)
+
+def end_all_quiz(guild_id: int):
+  try:
+    sqliteConnection = sqlite3.connect(TMP_DIR+'trivia.sqlite3')
+    cursor = sqliteConnection.cursor()
+
+    sqlite_query = """UPDATE QUIZ SET is_running = 0 WHERE guild_id = ?"""
+
+    data = (guild_id, )
+    cursor.execute(sqlite_query, data)
+
+    sqliteConnection.commit()
+    cursor.close()
+
+  except sqlite3.Error as error:
+    print("SQLITE Error: ", error)
+    raise Exception(str(error))
+  finally:
+    if sqliteConnection:
+      sqliteConnection.close()
+
+  message = {
+    "message": "all quiz ended"
+  } 
+  return message
+
+def quiz_by_running(is_running: int, guild_id: int):
+  json_data = []
+  try:
+    sqliteConnection = sqlite3.connect(TMP_DIR+'trivia.sqlite3')
+    cursor_quiz = sqliteConnection.cursor()
+
+    sqlite_select_quiz_query = """SELECT * from Quiz WHERE is_running = ? and guild_id = ? ORDER BY ID DESC"""
+    cursor_quiz.execute(sqlite_select_quiz_query, (is_running,guild_id,))
+    records_quiz = cursor_quiz.fetchall()
+    for row in records_quiz:
+
+      quiz_data_set = {
+        "id":           row[0],
+        "author":       row[1],
+        "author_id":    row[2],
+        "is_running":   row[3],
+        "guild_id":    row[4]
+      }
+
+      json_data.append(quiz_data_set)
+
+    
+    cursor_quiz.close()
+  except sqlite3.Error as error:
+    print("SQLITE Error: ", error)
+    raise Exception(str(error))
+  finally:
+    if sqliteConnection:
+      sqliteConnection.close()
+
+  return json_data
